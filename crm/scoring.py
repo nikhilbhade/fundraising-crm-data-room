@@ -224,7 +224,16 @@ def score_firm(
     if relevances & set(BLOCKING_RELEVANCE):
         p = float(w.get("penalty_direct_conflict", 45.0))
         penalties["penalty_direct_conflict"] = p
-        flags.append("Direct conflict — backed a competitor")
+        conflict_names = sorted(
+            {
+                str(r.get("company_name") or r.get("name") or "").strip()
+                for r in portfolio_rows
+                if (r.get("relevance") or "").upper() in BLOCKING_RELEVANCE
+                and str(r.get("company_name") or r.get("name") or "").strip()
+            }
+        )
+        label = ", ".join(conflict_names) if conflict_names else "a competitor"
+        flags.append(f"Direct conflict — backed {label}")
     elif relevances & set(REVIEW_RELEVANCE):
         p = float(w.get("penalty_potential_conflict", 15.0))
         penalties["penalty_potential_conflict"] = p

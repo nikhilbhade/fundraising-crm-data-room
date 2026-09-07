@@ -31,6 +31,36 @@ TERMINAL_STAGES = ["Committed"]
 
 OPPORTUNITY_STATUSES = ["Active", "Passed", "Stalled", "Won"]
 
+ACCESS_MODES = [
+    "Research needed",
+    "Warm intro",
+    "Direct outreach",
+    "LinkedIn search",
+    "Application",
+    "Programme",
+]
+
+APPLICATION_STATUSES = [
+    "Not applicable",
+    "Researching",
+    "Drafting",
+    "Ready",
+    "Submitted",
+    "Interview",
+    "Accepted",
+    "Rejected",
+    "Deferred",
+]
+
+DECISION_STATUSES = [
+    "Unknown",
+    "Screening",
+    "Partner review",
+    "Diligence",
+    "IC scheduled",
+    "Decided",
+]
+
 # Rough default conversion assumption per stage, used only to seed the
 # probability field on a new opportunity. Always overridable per firm.
 DEFAULT_STAGE_PROBABILITY = {
@@ -113,6 +143,9 @@ DILIGENCE_STATUSES = ["Requested", "In Progress", "Delivered", "Blocked"]
 
 TASK_STATUSES = ["Open", "Done", "Cancelled"]
 PRIORITIES = ["High", "Medium", "Low"]
+BOARD_STATUSES = ["Backlog", "Ready", "In Progress", "Blocked", "Done"]
+WORKSTREAMS = ["Apply", "Talk", "Track", "Data room", "Research"]
+TASK_TYPES = ["Epic", "Task", "Check", "Decision"]
 
 DOC_CATEGORIES = [
     "Deck",

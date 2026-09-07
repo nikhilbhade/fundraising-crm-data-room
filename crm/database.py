@@ -23,6 +23,7 @@ PACKAGE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = PACKAGE_DIR.parent
 SCHEMA_PATH = PACKAGE_DIR / "schema.sql"
 SEED_DIR = PROJECT_DIR / "seed"
+SEED_REVISION = 2
 
 # Load order matters: parents before children.
 SEED_ORDER = [
@@ -79,6 +80,41 @@ PRIMARY_KEYS = {
     "program_cycles": ["cycle_id"],
 }
 
+# CREATE TABLE IF NOT EXISTS does not add columns to an existing user's local
+# database. These additive migrations keep old clones compatible with releases
+# that extend the CRM while preserving every private note and pipeline edit.
+ADDITIVE_MIGRATIONS = {
+    "firms": {
+        "access_mode": "TEXT DEFAULT 'Research needed'",
+        "application_url": "TEXT",
+        "access_notes": "TEXT",
+        "decision_process": "TEXT",
+        "decision_makers": "TEXT",
+        "decision_timeline_days": "INTEGER",
+        "decision_notes": "TEXT",
+        "target_partner_role": "TEXT",
+        "linkedin_query": "TEXT",
+    },
+    "opportunities": {
+        "application_status": "TEXT DEFAULT 'Not applicable'",
+        "application_started_on": "TEXT",
+        "application_submitted_on": "TEXT",
+        "application_deadline": "TEXT",
+        "decision_status": "TEXT DEFAULT 'Unknown'",
+        "decision_next_gate": "TEXT",
+        "decision_expected": "TEXT",
+    },
+    "tasks": {
+        "workstream": "TEXT DEFAULT 'Track'",
+        "board_status": "TEXT DEFAULT 'Backlog'",
+        "task_type": "TEXT DEFAULT 'Task'",
+        "description": "TEXT",
+        "acceptance_criteria": "TEXT",
+        "blocked_by": "TEXT",
+        "sort_order": "INTEGER DEFAULT 100",
+    },
+}
+
 
 def db_path() -> Path:
     """Where the working database lives. Override with FUNDRAISING_CRM_DB."""
@@ -115,7 +151,25 @@ def table_exists(conn: sqlite3.Connection, table: str) -> bool:
 # ------------------------------------------------------------------ schema --
 def init_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA_PATH.read_text())
+    apply_additive_migrations(conn)
     conn.commit()
+
+
+def apply_additive_migrations(conn: sqlite3.Connection) -> None:
+    """Apply safe column-only migrations to databases created by older builds."""
+    for table, columns in ADDITIVE_MIGRATIONS.items():
+        existing = set(table_columns(conn, table))
+        for name, declaration in columns.items():
+            if name not in existing:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+    conn.execute(
+        "UPDATE tasks SET board_status = 'Done' "
+        "WHERE status = 'Done' AND (board_status IS NULL OR board_status != 'Done')"
+    )
+    conn.execute(
+        "UPDATE tasks SET board_status = 'Ready' "
+        "WHERE status = 'Open' AND (board_status IS NULL OR board_status = '')"
+    )
 
 
 def is_empty(conn: sqlite3.Connection) -> bool:
@@ -161,19 +215,37 @@ def upsert_dataframe(
 
     if replace or not pk:
         sql = f"INSERT OR REPLACE INTO {table} ({col_list}) VALUES ({placeholders})"
+        rows = [tuple(r) for r in data.itertuples(index=False, name=None)]
+        conn.executemany(sql, rows)
     else:
+        # SQLite validates NOT NULL columns before applying ON CONFLICT.  A
+        # partial CSV therefore needs a true UPDATE for existing records rather
+        # than an INSERT ... ON CONFLICT statement that omits required fields.
         updatable = [c for c in names if c not in pk]
-        if updatable:
-            setters = ", ".join(f"{c}=excluded.{c}" for c in updatable)
-            conflict = f"ON CONFLICT({', '.join(pk)}) DO UPDATE SET {setters}"
-        else:
-            conflict = f"ON CONFLICT({', '.join(pk)}) DO NOTHING"
-        sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders}) {conflict}"
-
-    rows = [tuple(r) for r in data.itertuples(index=False, name=None)]
-    conn.executemany(sql, rows)
+        where = " AND ".join(f"{c}=?" for c in pk)
+        update_sql = (
+            f"UPDATE {table} SET "
+            + ", ".join(f"{c}=?" for c in updatable)
+            + f" WHERE {where}"
+            if updatable
+            else None
+        )
+        insert_sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+        for row in data.to_dict(orient="records"):
+            pk_values = tuple(row[c] for c in pk)
+            exists = conn.execute(
+                f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", pk_values
+            ).fetchone()
+            if exists:
+                if update_sql:
+                    conn.execute(
+                        update_sql,
+                        tuple(row[c] for c in updatable) + pk_values,
+                    )
+            else:
+                conn.execute(insert_sql, tuple(row[c] for c in names))
     conn.commit()
-    return len(rows)
+    return len(data)
 
 
 def load_seed(conn: sqlite3.Connection, tables: Optional[Iterable[str]] = None) -> Dict[str, int]:
@@ -193,12 +265,77 @@ def load_seed(conn: sqlite3.Connection, tables: Optional[Iterable[str]] = None) 
     return counts
 
 
+def merge_seed_defaults(
+    conn: sqlite3.Connection, tables: Optional[Iterable[str]] = None
+) -> Dict[str, int]:
+    """Add public seed rows and fill blanks without replacing user edits."""
+    counts: Dict[str, int] = {}
+    for table in tables or SEED_ORDER:
+        path = SEED_DIR / f"{table}.csv"
+        if not path.exists():
+            continue
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False, na_values=[""])
+        data = _coerce(frame, table_columns(conn, table))
+        pk = PRIMARY_KEYS.get(table, [])
+        names = list(data.columns)
+        if data.empty or not pk or any(k not in names for k in pk):
+            counts[table] = 0
+            continue
+
+        placeholders = ", ".join("?" for _ in names)
+        insert_sql = (
+            f"INSERT OR IGNORE INTO {table} ({', '.join(names)}) "
+            f"VALUES ({placeholders})"
+        )
+        updatable = [c for c in names if c not in pk]
+        where = " AND ".join(f"{c}=?" for c in pk)
+        blank_setters = ", ".join(
+            f"{c}=CASE WHEN {c} IS NULL OR "
+            f"(typeof({c})='text' AND trim({c})='') THEN ? ELSE {c} END"
+            for c in updatable
+        )
+        for row in data.to_dict(orient="records"):
+            conn.execute(insert_sql, tuple(row[c] for c in names))
+            if updatable:
+                conn.execute(
+                    f"UPDATE {table} SET {blank_setters} WHERE {where}",
+                    tuple(row[c] for c in updatable) + tuple(row[c] for c in pk),
+                )
+        counts[table] = len(data)
+    seed_scoring_defaults(conn)
+    conn.commit()
+    return counts
+
+
+def _seed_revision(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        "SELECT value FROM app_metadata WHERE key='seed_revision'"
+    ).fetchone()
+    try:
+        return int(row["value"]) if row else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _mark_seed_revision(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        "INSERT INTO app_metadata(key, value) VALUES('seed_revision', ?) "
+        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (str(SEED_REVISION),),
+    )
+    conn.commit()
+
+
 def bootstrap() -> sqlite3.Connection:
     """Open the database, creating and seeding it the first time."""
     conn = connect()
     init_schema(conn)
     if is_empty(conn):
         load_seed(conn)
+        _mark_seed_revision(conn)
+    elif _seed_revision(conn) < SEED_REVISION:
+        merge_seed_defaults(conn)
+        _mark_seed_revision(conn)
     else:
         seed_scoring_defaults(conn)
     return conn

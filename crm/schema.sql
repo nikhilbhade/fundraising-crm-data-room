@@ -3,6 +3,11 @@
 
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS app_metadata (
+    key                 TEXT PRIMARY KEY,
+    value               TEXT
+);
+
 -- ---------------------------------------------------------------- firms -----
 CREATE TABLE IF NOT EXISTS firms (
     firm_id             TEXT PRIMARY KEY,
@@ -23,6 +28,15 @@ CREATE TABLE IF NOT EXISTS firms (
     conflict_note       TEXT,
     engagement_status   TEXT DEFAULT 'Engage',  -- Engage | Hold - Review Conflict | Do Not Engage
     engagement_reason   TEXT,
+    access_mode         TEXT DEFAULT 'Research needed', -- Warm intro | Direct outreach | Application | Programme | Research needed
+    application_url     TEXT,
+    access_notes        TEXT,
+    decision_process    TEXT,
+    decision_makers     TEXT,
+    decision_timeline_days INTEGER,
+    decision_notes      TEXT,
+    target_partner_role TEXT,
+    linkedin_query      TEXT,
     source_url          TEXT,
     verification_status TEXT DEFAULT 'UNVERIFIED',  -- UNVERIFIED | VERIFIED | NEEDS_REVIEW
     notes               TEXT,
@@ -143,6 +157,13 @@ CREATE TABLE IF NOT EXISTS opportunities (
     last_touch_date     TEXT,
     next_action         TEXT,
     next_action_date    TEXT,
+    application_status  TEXT DEFAULT 'Not applicable', -- Not applicable | Researching | Drafting | Ready | Submitted | Interview | Accepted | Rejected | Deferred
+    application_started_on TEXT,
+    application_submitted_on TEXT,
+    application_deadline TEXT,
+    decision_status     TEXT DEFAULT 'Unknown', -- Unknown | Screening | Partner review | Diligence | IC scheduled | Decided
+    decision_next_gate  TEXT,
+    decision_expected   TEXT,
     owner               TEXT,
     pass_reason         TEXT,
     notes               TEXT,
@@ -204,7 +225,14 @@ CREATE TABLE IF NOT EXISTS tasks (
     owner               TEXT,
     priority            TEXT,     -- High | Medium | Low
     status              TEXT,     -- Open | Done | Cancelled
-    notes               TEXT
+    notes               TEXT,
+    workstream          TEXT DEFAULT 'Track', -- Apply | Talk | Track | Data room | Research
+    board_status        TEXT DEFAULT 'Backlog', -- Backlog | Ready | In Progress | Blocked | Done
+    task_type           TEXT DEFAULT 'Task', -- Epic | Task | Check | Decision
+    description         TEXT,
+    acceptance_criteria TEXT,
+    blocked_by          TEXT,
+    sort_order          INTEGER DEFAULT 100
 );
 
 -- ------------------------------------------------------------ data room -----

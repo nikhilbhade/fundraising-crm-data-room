@@ -1,183 +1,219 @@
 # Fundraising CRM & Data Room
 
-A local, single-file-database CRM for running a venture round: investor research,
-conflict screening, pipeline, objections, diligence, data room and accelerator
-deadlines — in one Streamlit app with no accounts, no cloud and no vendor.
+A local fundraising workspace that answers four questions:
 
-Built for an AI B2B SaaS company raising in the U.S., with India-based funds that
-invest in U.S. companies as the second tier. The scoring is configurable, so the
-weighting works for any thesis.
+1. What can I apply to right now?
+2. Who should I talk to at each fund?
+3. Where does each conversation and decision stand?
+4. What do I need to do next?
 
----
+It is intentionally not a sales CRM. The interface is organized around
+**Apply / Talk / Track**, with a Jira-style board for the actual work behind the
+raise.
 
 ## Run it
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/nikhilbhade/fundraising-crm-data-room.git
 cd fundraising-crm-data-room
 
-python3 -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 
 streamlit run app.py
 ```
 
-It opens at `http://localhost:8501`. On first launch the app creates
-`fundraising.db` next to `app.py` and loads the CSVs in `seed/` into it. That
-database is yours and is gitignored — nothing leaves your machine.
+Open [http://localhost:8501](http://localhost:8501). The first run creates
+`fundraising.db` and loads the public seed CSVs. The database is gitignored and
+stays on your machine.
 
-To keep the database somewhere else:
+To keep it elsewhere:
 
 ```bash
-FUNDRAISING_CRM_DB=~/private/fundraising.db streamlit run app.py
+FUNDRAISING_CRM_DB=/your/private/path/fundraising.db streamlit run app.py
 ```
 
----
+## The workflow
 
-## What's in it
+### Apply
 
-| Page | What it does |
-|---|---|
-| **Round status** | Target vs. committed vs. soft-circled, remaining allocation, probability-weighted pipeline |
-| **Investor funnel** | Stage distribution, stage-to-stage conversion, U.S. vs. India-corridor segmentation, pipeline board |
-| **Priority investors** | Ranked list with a full breakdown of how each score was produced |
-| **Follow-ups & actions** | Stale conversations, overdue and upcoming actions, programme deadlines, task list |
-| **Firms & partners** | Per-firm record: overview, partners, thesis tags, portfolio, signals, conversation log, objections, diligence, intro paths, news |
-| **Conflicts & exclusions** | Competitor watchlist, the firm-by-competitor check matrix, engagement status and manual overrides |
-| **In the news** | Fund closes, partner moves, strategy shifts, new investments and market news, with the sources to watch |
-| **Objections** | Every objection raised and the answer given, by category and severity |
-| **Signals & sources** | The signal catalogue (what to establish before spending a meeting) and the source registry |
-| **Programmes** | Accelerator and programme timelines with application deadlines |
-| **Data room** | A 22-item checklist and index, with a sharing log |
-| **Scoring** | Every weight, penalty and setting, editable |
-| **Data** | CSV import/export per table, full zip export, reseed and reset |
+- **Apply now** lists every fund's route in, direct link, application state,
+  deadline, target role, decision state, and a scoped LinkedIn people search.
+- **Accelerators & programmes** tracks application windows, decisions, terms,
+  and current status. Fifteen accelerators and founder programmes are included.
+- **Deal room** is a 22-item readiness checklist and sharing log. It indexes
+  secure URLs or paths; it is not a public file host.
 
----
+### Talk
 
-## How scoring works
+- **Who to talk to** turns each firm into a target role and a LinkedIn search
+  such as “seed partner covering enterprise AI or vertical software,” and
+  starts the highest-priority firms with named, source-backed contacts.
+- **Priority investors** ranks funds with an explainable rubric.
+- **Investor funnel** tracks the real conversation stage and allocation.
+- **Firm workspace** holds contacts, signals, notes, objections, diligence,
+  intros, portfolio evidence, and news.
+- **Conflicts & exclusions** prevents outreach to a fund with a confirmed
+  investment in a blocking competitor.
 
-The score is a weighted rubric, not a model. Eight components, each a 0–1
-sub-score multiplied by a weight that sums to 100:
+### Track
 
-| Component | Default weight | What it measures |
-|---|---:|---|
-| Thesis fit | 34 | Weighted overlap between the firm's thesis tags and yours |
-| Relevant portfolio | 14 | Adjacent, non-conflicting portfolio companies |
-| Stage fit | 14 | Distance between their stage and yours |
-| Check size fit | 12 | Whether your ask sits inside their normal range |
-| Geography priority | 10 | U.S. first, India-corridor second, everywhere else third |
-| Fund capacity | 8 | How recently the current vehicle closed |
-| Can lead | 5 | Whether they price rounds or only follow |
-| Warm intro | 3 | Best available introduction path |
+- **Fundraising board** is a five-column operating board: Backlog, Ready,
+  In Progress, Blocked, Done. It ships with 19 real fundraising jobs and clear
+  completion criteria.
+- **Round status** shows target, soft circles, commitments, remaining
+  allocation, and weighted pipeline.
+- **Follow-ups & actions**, **Objections**, and **In the news** catch stalled
+  conversations and changing context.
 
-Then penalties are subtracted: −45 for a direct conflict, −15 for a potential
-one, −8 for a fund whose vintage suggests it is out of capacity.
+## Investor and accelerator seed data
 
-Everything is editable on the **Scoring** page, and the **Priority investors**
-page shows the per-component arithmetic for any firm — so the ranking is always
-explainable without reading `crm/scoring.py`.
+The repo ships with:
 
----
+- **105 real investment firms and venture platforms**
+- a deliberate weighting toward U.S. pre-seed and seed investors in AI B2B
+  SaaS, enterprise software, vertical SaaS, data infrastructure, workflow
+  automation, martech, restaurant technology, and commerce
+- an India → U.S. corridor segment after the U.S. list
+- **15 accelerators, fellowships, and startup programmes** with application
+  links and a separate cycle/deadline table
+- **11 named decision-maker candidates** for priority U.S. and India-corridor
+  firms, verified against current official firm pages
+- 105 corresponding opportunity records and fund-vehicle placeholders
 
-## Conflict screening
+Every firm has a public source URL. Most expanded records are marked
+`NEEDS_REVIEW`: names, sites, stage focus, and thesis are useful for discovery,
+but current fund capacity, check size, and partner ownership should be confirmed
+from the firm's own site or a regulatory filing before outreach.
 
-The rule is simple and enforced by data, not code: **a fund that has backed a
-competitor is not approached.**
+## Who to talk to on LinkedIn
 
-- `seed/competitors.csv` is the watchlist. Each entry has a severity:
-  `Blocking` (hard exclusion), `Review` (hold), or `Monitor` (informational).
-- `firm_portfolio` links firms to companies. A link marked `DIRECT_CONFLICT`, or
-  matching an active Blocking competitor by name, sets that firm to
-  **Do Not Engage**.
-- **Conflicts & exclusions → Re-run conflict check** recomputes every firm's
-  status. Add a competitor, re-run, and see who it disqualifies.
-- A manual override is preserved: any `engagement_reason` beginning with
-  `MANUAL:` is never overwritten by the automatic pass.
-- The **Unchecked matrix** tab lists every firm × Blocking-competitor pair that
-  nobody has looked at yet. It starts fully unchecked on purpose — an
-  unverified "clear" is worse than an honest blank.
+The app does not guess people's names. A believable but stale partner record is
+more damaging than a blank one. It therefore includes an initial set of 11
+named contacts only where a current official firm page supports the name, role,
+and relevant focus.
 
----
+Instead, each firm stores:
 
-## What the seed data is, and what it is not
+- `target_partner_role`: the seat most likely to own the deal
+- `linkedin_query`: a scoped people-search query
+- a direct **Find people** link in the Talk view
+- verified contact records with source URL and verification state
 
-Sixteen firms ship with the repo: ten U.S. funds first, then six India-based
-funds that invest in U.S.-incorporated companies. Treat it as a **starting
-research frame, not a research product.**
+The workflow is:
 
-What is included: firm names, websites, headquarters, segment, firm type, stage
-focus, thesis tags, and a small set of well-known portfolio links.
+1. Start with the named contact when one is present; otherwise open the scoped
+   search.
+2. Find a current partner or GP who explicitly covers AI, enterprise SaaS, the
+   relevant vertical, and your stage.
+3. Confirm the person on the firm's team page or another primary source.
+4. Save the name, title, profile, source, and thesis rationale.
 
-What is deliberately **left blank**:
+No private relationship or warm-intro path is seeded.
 
-- **Partner names, titles and emails.** `seed/contacts.csv` ships empty. Partner
-  records go stale fast and inventing them would be worse than a blank table.
-- **Fund vintages, close dates and sizes.** Filling these from memory is exactly
-  the kind of error that makes a CRM untrustworthy. Pull them from SEC Form D
-  filings or the firm's own announcement. Until then, fund-capacity scoring stays
-  neutral rather than guessing.
-- **Warm introduction paths.** None are seeded. A fabricated warm intro is the
-  single most damaging thing this database could contain.
-- **Conversations, objections, diligence requests and soft circles.** All empty.
-  The pipeline starts where it actually is.
-- **News items.** Empty. Stale or invented news is worse than none.
+## Application and decision tracking
 
-Cheque ranges are **planning estimates**, marked as such in the notes column.
-Every firm row carries a `verification_status` of `UNVERIFIED` until you confirm
-it and change it yourself.
+Firm-level access fields:
 
-The two accelerator deadlines marked `VERIFIED` (Y Combinator Winter 2027 and
-PearX W27) were taken from the programmes' own application pages. Everything
-else in `program_cycles.csv` has no date and says so — deadlines move every
-cycle, so confirm from the source link before relying on the timeline.
+- access mode and direct route URL
+- access notes
+- target partner role and LinkedIn query
+- known decision process, decision makers, timeline, and notes
 
----
+Round-specific fields:
 
-## Editing and importing
+- application status, start date, submission date, and deadline
+- decision status, next gate, and expected decision date
+- conversation stage, next action, owner, probability, allocation ask,
+  soft-circled amount, and commitment
 
-Every table is CSV in, CSV out, and the column headers match the files in
-`seed/` exactly.
+## Conflict rule
 
-- **Data → Import**: pick a table, upload a CSV. Rows are upserted on the primary
-  key. By default only the columns present in your file are written, so a partial
-  CSV patches a table without blanking the fields it omits. Tick *Replace* to
-  overwrite whole rows. Unknown columns are reported and ignored rather than
-  rejecting the file.
-- **Data → Export**: any single table, or every table as one zip.
-- Importing `firm_portfolio`, `competitors` or `conflict_checks` re-runs the
-  conflict check automatically.
+The watchlist includes **Loop AI, Voosh AI, and Superorder** as blocking direct
+competitors, plus adjacent products that should be reviewed or monitored.
 
-To extend the schema, edit `crm/schema.sql`, add the table to `SEED_ORDER` and
-`PRIMARY_KEYS` in `crm/database.py`, and drop a matching CSV into `seed/`.
+The rule is evidence-based:
 
----
+- a firm linked to an active blocking competitor with `DIRECT_CONFLICT` is set
+  to **Do Not Engage**
+- a potential conflict is put on hold
+- every check stores its source and reviewer
+- unsourced assumptions do not exclude a fund
+- explicit manual decisions are preserved
 
-## Layout
+Run **Talk → Conflicts & exclusions → Re-run conflict check** after adding new
+portfolio evidence.
 
+## Scoring
+
+The default 100-point rubric is weighted toward thesis and seed-stage fit:
+
+| Component | Points |
+|---|---:|
+| Thesis fit | 34 |
+| Relevant portfolio | 14 |
+| Stage fit | 14 |
+| Check size fit | 12 |
+| Geography priority | 10 |
+| Fund capacity / freshness | 8 |
+| Ability to lead | 5 |
+| Warm access | 3 |
+
+Conflict and stale-fund penalties are applied after the component score. Every
+weight, thesis-tag importance, geography preference, and per-fund override is
+editable. The Priority view shows the full arithmetic.
+
+## Data model and portability
+
+SQLite stores normalized firms, fund vehicles, contacts, tags, portfolio,
+rounds, opportunities, applications, decision process, conversations,
+objections, diligence, tasks, documents, conflicts, sources, news, programmes,
+and cycles.
+
+Every table is CSV importable and exportable. The Data page can download one
+table or the full database as a CSV zip. Additive migrations preserve existing
+local databases when new fields are introduced.
+
+## Privacy
+
+This is a single-user local app with no authentication. Do not expose it on a
+public server with real fundraising information.
+
+The repo ignores:
+
+- `*.db`
+- `private/`
+- `exports/`
+- local environments and secrets
+
+Keep real partner emails, conversation notes, introduction paths, customer
+references, and secure data-room links only in the local database or a private
+backup.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+python -m py_compile app.py crm/*.py
 ```
-app.py                  All pages and UI
-crm/
-  schema.sql            Full SQLite schema, 24 tables
-  constants.py          Pipeline stages, statuses, category vocabularies, default weights
-  database.py           Connection, seeding, upserts, CSV import/export, conflict engine
-  scoring.py            The scoring rubric — pure functions, no I/O
-seed/                   CSV seed data, one file per table
+
+The tests cover schema bootstrapping, the 100+ firm seed, new access and
+decision fields, board seeding, blocking competitors, conflict recomputation,
+CSV upserts, and deterministic scoring.
+
+## Project layout
+
+```text
+app.py                  Streamlit interface
+crm/schema.sql          SQLite schema
+crm/database.py         Persistence, migrations, CSV import/export, conflicts
+crm/scoring.py          Pure explainable scoring functions
+crm/constants.py        Shared workflow vocabulary and weights
+seed/                   Public starting data; one CSV per table
+tests/                  Database and scoring tests
 ```
 
-`crm/scoring.py` has no database or Streamlit imports, so the rubric can be
-tested or reused on its own.
-
----
-
-## Keeping private data out of the repo
-
-`.gitignore` already excludes `*.db`, `private/` and `exports/`. The seed CSVs
-are the shared starting point; anything real — your actual pipeline, partner
-contacts, soft circles, references — lives in the local database and never gets
-committed. If you want to keep a private CSV backup, put it in `private/`.
-
----
-
-## Licence
+## License
 
 MIT. See [LICENSE](LICENSE).

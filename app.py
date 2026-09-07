@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
 
 import pandas as pd
 import streamlit as st
@@ -94,6 +95,15 @@ def date_input_or_none(label: str, value: Any, key: str):
     return None if unset else picked.isoformat()
 
 
+def linkedin_search_url(firm: Any) -> str:
+    """Build an actionable people search without inventing a partner identity."""
+    query = firm.get("linkedin_query") if hasattr(firm, "get") else None
+    if not query:
+        name = firm.get("firm_name") or firm.get("name") or "venture capital"
+        query = f"{name} partner AI SaaS"
+    return f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(str(query))}"
+
+
 # ---------------------------------------------------------------- scoring ---
 @st.cache_data(show_spinner=False)
 def scored_firms() -> pd.DataFrame:
@@ -159,7 +169,12 @@ def pipeline_view() -> pd.DataFrame:
     opps = read(
         """
         SELECT o.*, f.name AS firm_name, f.geo_segment, f.engagement_status,
-               f.engagement_reason, f.website, f.hq_city, f.hq_country
+               f.engagement_reason, f.website, f.hq_city, f.hq_country,
+               f.firm_type, f.stage_focus, f.access_mode,
+               f.application_url AS firm_application_url, f.access_notes,
+               f.decision_process, f.decision_makers, f.decision_timeline_days,
+               f.decision_notes, f.target_partner_role, f.linkedin_query,
+               f.source_url AS firm_source_url, f.verification_status
         FROM opportunities o JOIN firms f ON f.firm_id = o.firm_id
         """
     )
@@ -191,6 +206,327 @@ def blocked_firm_ids() -> set:
 # ============================================================================
 # Pages
 # ============================================================================
+def page_apply():
+    st.title("Apply")
+    st.caption(
+        "Start with the routes you can use now. Applications and accelerator clocks sit beside "
+        "direct investor access so the next click is always visible."
+    )
+    pipe = pipeline_view()
+    if pipe.empty:
+        st.info("No investor opportunities yet.")
+        return
+
+    pipe = pipe.copy()
+    pipe["access_mode"] = pipe["access_mode"].fillna("Research needed")
+    pipe["LinkedIn search"] = pipe.apply(linkedin_search_url, axis=1)
+    pipe["Go"] = pipe["firm_application_url"].where(
+        pipe["firm_application_url"].fillna("") != "", pipe["website"]
+    )
+    actionable = pipe[pipe["access_mode"].isin(["Application", "Direct outreach", "LinkedIn search"])]
+    applications = pipe[pipe["application_status"].fillna("Not applicable") != "Not applicable"]
+    deadlines = applications[applications["application_deadline"].fillna("") != ""]
+
+    a, b, c, d = st.columns(4)
+    a.metric("Funds", len(pipe))
+    b.metric("Actionable without an intro", len(actionable))
+    c.metric("Applications in play", len(applications))
+    d.metric("Dated deadlines", len(deadlines))
+
+    c1, c2, c3 = st.columns([1.2, 1.2, 1.8])
+    route_filter = c1.multiselect(
+        "Route in", C.ACCESS_MODES, default=["Application", "Direct outreach", "LinkedIn search"]
+    )
+    stage_filter = c2.multiselect(
+        "Fund stage", C.STAGES_OF_FOCUS, default=["Pre-seed", "Seed"]
+    )
+    search = c3.text_input("Find a fund", placeholder="Name, thesis, location…")
+
+    view = pipe[pipe["access_mode"].isin(route_filter)] if route_filter else pipe.iloc[0:0]
+    if stage_filter:
+        view = view[view["stage_focus"].fillna("").apply(
+            lambda value: any(stage in str(value).split(",") for stage in stage_filter)
+        )]
+    if search:
+        needle = search.lower()
+        view = view[view.apply(
+            lambda row: needle in " ".join(
+                str(row.get(key) or "") for key in ("firm_name", "stage_focus", "target_partner_role", "hq_city")
+            ).lower(), axis=1
+        )]
+
+    st.subheader("Routes you can act on")
+    st.dataframe(
+        view[[
+            "firm_name", "access_mode", "stage_focus", "application_status",
+            "application_deadline", "target_partner_role", "Go", "LinkedIn search",
+            "priority", "verification_status",
+        ]].rename(columns={
+            "firm_name": "Fund", "access_mode": "Route", "stage_focus": "Stages",
+            "application_status": "Application", "application_deadline": "Deadline",
+            "target_partner_role": "Who to find", "priority": "Fit score",
+            "verification_status": "Research",
+        }),
+        width="stretch",
+        hide_index=True,
+        column_config={
+            "Go": st.column_config.LinkColumn("Open route", display_text="Open ↗"),
+            "LinkedIn search": st.column_config.LinkColumn("Find the partner", display_text="Search ↗"),
+        },
+    )
+
+    st.subheader("Update an application or decision")
+    labels = pipe["firm_name"].tolist()
+    with st.form("apply_update"):
+        picked = st.selectbox("Fund", labels)
+        row = pipe[pipe["firm_name"] == picked].iloc[0]
+        x1, x2 = st.columns(2)
+        access = x1.selectbox(
+            "Access route", C.ACCESS_MODES,
+            index=C.ACCESS_MODES.index(row["access_mode"]) if row["access_mode"] in C.ACCESS_MODES else 0,
+        )
+        apply_url = x2.text_input("Application / contact URL", value=row["firm_application_url"] or "")
+        access_notes = st.text_area("Access notes", value=row["access_notes"] or "")
+        x1, x2, x3 = st.columns(3)
+        app_status = x1.selectbox(
+            "Application status", C.APPLICATION_STATUSES,
+            index=C.APPLICATION_STATUSES.index(row["application_status"])
+            if row["application_status"] in C.APPLICATION_STATUSES else 0,
+        )
+        app_deadline = date_input_or_none(
+            "Application deadline", row["application_deadline"], f"apply_deadline_{row['firm_id']}"
+        )
+        submitted = date_input_or_none(
+            "Submitted on", row["application_submitted_on"], f"apply_submitted_{row['firm_id']}"
+        )
+        decision_status = x2.selectbox(
+            "Decision status", C.DECISION_STATUSES,
+            index=C.DECISION_STATUSES.index(row["decision_status"])
+            if row["decision_status"] in C.DECISION_STATUSES else 0,
+        )
+        decision_gate = x3.text_input("Next decision gate", value=row["decision_next_gate"] or "")
+        decision_expected = date_input_or_none(
+            "Decision expected", row["decision_expected"], f"decision_expected_{row['firm_id']}"
+        )
+        decision_process = st.text_area(
+            "How this fund decides", value=row["decision_process"] or "",
+            help="Record the sourced sequence: sponsor, partner meeting, references, diligence and IC.",
+        )
+        decision_makers = st.text_input("Known decision makers", value=row["decision_makers"] or "")
+        if st.form_submit_button("Save apply / decision record", type="primary"):
+            db.update_row(conn, "firms", {"firm_id": row["firm_id"]}, {
+                "access_mode": access, "application_url": apply_url,
+                "access_notes": access_notes, "decision_process": decision_process,
+                "decision_makers": decision_makers,
+            })
+            db.update_row(conn, "opportunities", {"opportunity_id": row["opportunity_id"]}, {
+                "application_status": app_status,
+                "application_submitted_on": submitted,
+                "application_deadline": app_deadline,
+                "decision_status": decision_status,
+                "decision_next_gate": decision_gate,
+                "decision_expected": decision_expected,
+            })
+            refresh(); st.success("Saved."); st.rerun()
+
+    st.divider()
+    st.subheader("Accelerators and programmes")
+    programs = read(
+        """
+        SELECT p.name, p.organisation, p.program_type, p.stage_fit, p.application_url,
+               p.fit_rationale, p.priority, p.verification_status,
+               c.cycle_name, c.application_deadline, c.decision_expected, c.our_status
+        FROM programs p LEFT JOIN program_cycles c ON c.program_id = p.program_id
+        WHERE p.is_active = 1
+        ORDER BY CASE p.priority WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END,
+                 c.application_deadline, p.name
+        """
+    )
+    st.dataframe(
+        programs.rename(columns={
+            "name": "Programme", "organisation": "Organisation", "program_type": "Type",
+            "stage_fit": "Stages", "application_url": "Apply", "fit_rationale": "Why it fits",
+            "priority": "Priority", "verification_status": "Research", "cycle_name": "Cycle",
+            "application_deadline": "Deadline", "decision_expected": "Decision",
+            "our_status": "Our status",
+        }),
+        width="stretch", hide_index=True,
+        column_config={"Apply": st.column_config.LinkColumn("Apply", display_text="Open ↗")},
+    )
+
+
+def page_talk():
+    st.title("Who to talk to")
+    st.caption(
+        "Each fund has a role to target and a live LinkedIn people search. Save a person only "
+        "after confirming their current title and thesis on a primary source."
+    )
+    pipe = pipeline_view()
+    if pipe.empty:
+        st.info("No funds yet.")
+        return
+    contacts = read(
+        "SELECT firm_id, full_name, title, linkedin_url, verification_status "
+        "FROM contacts WHERE is_decision_maker = 1"
+    )
+    verified = {}
+    for firm_id, rows in contacts.groupby("firm_id") if not contacts.empty else []:
+        verified[firm_id] = "; ".join(rows["full_name"].dropna().astype(str))
+
+    pipe = pipe.copy()
+    pipe["LinkedIn search"] = pipe.apply(linkedin_search_url, axis=1)
+    pipe["Verified contact"] = pipe["firm_id"].map(verified).fillna("")
+    c1, c2, c3 = st.columns([1.2, 1.2, 1.8])
+    segment = c1.multiselect(
+        "Segment", C.GEO_SEGMENTS, default=["US", "INDIA_US_CORRIDOR"],
+        format_func=lambda key: C.GEO_SEGMENT_LABELS[key],
+    )
+    engage_only = c2.checkbox("Cleared to engage", value=True)
+    query = c3.text_input("Search", placeholder="Fund, role, stage…")
+    view = pipe[pipe["geo_segment"].isin(segment)]
+    if engage_only:
+        view = view[view["engagement_status"] == "Engage"]
+    if query:
+        needle = query.lower()
+        view = view[view.apply(lambda row: needle in " ".join(
+            str(row.get(key) or "") for key in ("firm_name", "target_partner_role", "stage_focus", "Verified contact")
+        ).lower(), axis=1)]
+    st.dataframe(
+        view[[
+            "firm_name", "priority", "stage_focus", "target_partner_role", "Verified contact",
+            "LinkedIn search", "access_mode", "stage", "decision_status", "engagement_status",
+        ]].rename(columns={
+            "firm_name": "Fund", "priority": "Fit score", "stage_focus": "Stages",
+            "target_partner_role": "Who to target", "access_mode": "Route", "stage": "Conversation",
+            "decision_status": "Decision", "engagement_status": "Conflict clearance",
+        }),
+        width="stretch", hide_index=True,
+        column_config={
+            "LinkedIn search": st.column_config.LinkColumn("LinkedIn", display_text="Find people ↗"),
+        },
+    )
+
+    st.subheader("Verify and save a contact")
+    labels = view["firm_name"].tolist()
+    if not labels:
+        st.info("No funds match the filters.")
+        return
+    selected = st.selectbox("Fund", labels, key="talk_firm")
+    row = view[view["firm_name"] == selected].iloc[0]
+    st.write(f"**Target role:** {row['target_partner_role'] or 'Partner or GP investing in AI SaaS'}")
+    b1, b2 = st.columns(2)
+    b1.link_button("Open scoped LinkedIn search", linkedin_search_url(row), width="stretch")
+    if row["firm_source_url"]:
+        b2.link_button("Open firm source", row["firm_source_url"], width="stretch")
+    with st.form("talk_contact"):
+        n1, n2 = st.columns(2)
+        full_name = n1.text_input("Verified full name")
+        title = n2.text_input("Current title")
+        n1, n2 = st.columns(2)
+        linkedin = n1.text_input("LinkedIn profile URL")
+        source = n2.text_input("Firm profile / source URL")
+        focus = st.text_input("Why this person owns the thesis")
+        if st.form_submit_button("Save verified contact", type="primary"):
+            if not full_name or not source:
+                st.error("Add both the person's name and a source URL before saving.")
+            else:
+                db.insert_row(conn, "contacts", {
+                    "contact_id": db.new_id("c"), "firm_id": row["firm_id"],
+                    "full_name": full_name, "title": title, "seniority": "Partner",
+                    "is_decision_maker": 1, "focus_areas": focus,
+                    "linkedin_url": linkedin, "source_url": source,
+                    "verification_status": "VERIFIED",
+                })
+                refresh(); st.success("Verified contact saved."); st.rerun()
+
+
+def page_board():
+    st.title("Fundraising board")
+    st.caption(
+        "The operational layer: real work moves from backlog to done. Conversation stages remain "
+        "on the investor record; this board is for the jobs required to make the raise happen."
+    )
+    tasks = read(
+        "SELECT t.*, f.name AS firm_name FROM tasks t "
+        "LEFT JOIN firms f ON f.firm_id = t.firm_id "
+        "ORDER BY t.sort_order, CASE t.priority WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 ELSE 2 END"
+    )
+    if tasks.empty:
+        st.info("No board items yet.")
+        return
+    tasks["board_status"] = tasks["board_status"].fillna("Backlog")
+    tasks["workstream"] = tasks["workstream"].fillna("Track")
+    workstreams = st.multiselect("Workstream", C.WORKSTREAMS, default=C.WORKSTREAMS)
+    board = tasks[tasks["workstream"].isin(workstreams)]
+    high_open = len(board[(board["priority"] == "High") & (board["board_status"] != "Done")])
+    blocked = len(board[board["board_status"] == "Blocked"])
+    a, b, c, d = st.columns(4)
+    a.metric("Board items", len(board))
+    b.metric("In progress", len(board[board["board_status"] == "In Progress"]))
+    c.metric("Blocked", blocked)
+    d.metric("High priority open", high_open)
+
+    columns = st.columns(len(C.BOARD_STATUSES))
+    for col, status in zip(columns, C.BOARD_STATUSES):
+        with col:
+            items = board[board["board_status"] == status]
+            st.markdown(f"#### {status} · {len(items)}")
+            for task in items.to_dict("records"):
+                with st.container(border=True):
+                    st.caption(f"{task.get('task_type') or 'Task'} · {task.get('workstream') or 'Track'}")
+                    st.markdown(f"**{task['title']}**")
+                    if task.get("firm_name"):
+                        st.caption(task["firm_name"])
+                    if task.get("description"):
+                        st.write(task["description"])
+                    bits = [task.get("priority") or "Medium"]
+                    if task.get("owner"):
+                        bits.append(task["owner"])
+                    if task.get("due_date"):
+                        bits.append(f"due {task['due_date']}")
+                    st.caption(" · ".join(bits))
+                    if task.get("blocked_by"):
+                        st.warning(f"Blocked by: {task['blocked_by']}")
+                    with st.expander("Move / inspect"):
+                        target = st.selectbox(
+                            "Column", C.BOARD_STATUSES,
+                            index=C.BOARD_STATUSES.index(status), key=f"board_target_{task['task_id']}",
+                        )
+                        if task.get("acceptance_criteria"):
+                            st.caption(f"Done when: {task['acceptance_criteria']}")
+                        if st.button("Move", key=f"board_move_{task['task_id']}", width="stretch"):
+                            db.update_row(conn, "tasks", {"task_id": task["task_id"]}, {
+                                "board_status": target,
+                                "status": "Done" if target == "Done" else "Open",
+                            })
+                            refresh(); st.rerun()
+
+    st.divider()
+    with st.expander("Add a board item"):
+        with st.form("board_add"):
+            title = st.text_input("Job to be done")
+            a, b, c, d = st.columns(4)
+            workstream = a.selectbox("Workstream", C.WORKSTREAMS)
+            board_status = b.selectbox("Column", C.BOARD_STATUSES)
+            priority = c.selectbox("Priority", C.PRIORITIES, index=1)
+            task_type = d.selectbox("Type", C.TASK_TYPES, index=1)
+            owner = st.text_input("Owner")
+            due = date_input_or_none("Due", None, "board_due")
+            description = st.text_area("Description")
+            acceptance = st.text_area("Done when")
+            blocked_by = st.text_input("Blocked by")
+            if st.form_submit_button("Add to board", type="primary") and title:
+                db.insert_row(conn, "tasks", {
+                    "task_id": db.new_id("task"), "title": title, "due_date": due,
+                    "owner": owner, "priority": priority,
+                    "status": "Done" if board_status == "Done" else "Open",
+                    "workstream": workstream, "board_status": board_status,
+                    "task_type": task_type, "description": description,
+                    "acceptance_criteria": acceptance, "blocked_by": blocked_by,
+                })
+                refresh(); st.rerun()
+
+
 def page_round():
     st.title("Round status")
     row = db.active_round(conn)
@@ -1386,7 +1722,7 @@ def page_objections():
 
 
 def page_dataroom():
-    st.title("Data room")
+    st.title("Deal room")
     st.caption(
         "A checklist and an index, not a file host. Nothing is uploaded — 'Location' points at "
         "wherever the document actually lives."
@@ -1622,25 +1958,38 @@ def page_data():
 
 
 # ============================================================================
-PAGES = {
-    "Round status": page_round,
-    "Investor funnel": page_funnel,
-    "Priority investors": page_priority,
-    "Follow-ups & actions": page_actions,
-    "Firms & partners": page_firm,
-    "Conflicts & exclusions": page_conflicts,
-    "In the news": page_news,
-    "Objections": page_objections,
-    "Signals & sources": page_signals,
-    "Programmes": page_programs,
-    "Data room": page_dataroom,
-    "Scoring": page_scoring,
-    "Data": page_data,
+NAV_SECTIONS = {
+    "Apply": {
+        "Apply now": page_apply,
+        "Accelerators & programmes": page_programs,
+        "Deal room": page_dataroom,
+    },
+    "Talk": {
+        "Who to talk to": page_talk,
+        "Priority investors": page_priority,
+        "Investor funnel": page_funnel,
+        "Firm workspace": page_firm,
+        "Conflicts & exclusions": page_conflicts,
+    },
+    "Track": {
+        "Fundraising board": page_board,
+        "Round status": page_round,
+        "Follow-ups & actions": page_actions,
+        "Objections": page_objections,
+        "In the news": page_news,
+    },
+    "Settings": {
+        "Signals & sources": page_signals,
+        "Scoring": page_scoring,
+        "Data": page_data,
+    },
 }
 
 with st.sidebar:
     st.title("Fundraising CRM")
-    choice = st.radio("", list(PAGES.keys()), label_visibility="collapsed")
+    st.caption("Apply · Talk · Track")
+    section = st.radio("Mode", list(NAV_SECTIONS), horizontal=True)
+    choice = st.radio("Page", list(NAV_SECTIONS[section]), label_visibility="collapsed")
     st.divider()
     pipe = pipeline_view()
     if not pipe.empty:
@@ -1650,4 +1999,4 @@ with st.sidebar:
         st.caption(f"{len(pipe)} firms · {stale} stale · {blocked} not cleared to engage")
     st.caption(f"Database: `{db.db_path().name}`")
 
-PAGES[choice]()
+NAV_SECTIONS[section][choice]()
