@@ -1,0 +1,11 @@
+competitor_id,name,website,category,overlap,severity,is_active,source_url,notes
+cmp_bikky,Bikky,https://www.bikky.com,Direct,"Restaurant customer data and marketing analytics aimed at the same buyer.",Blocking,1,https://www.bikky.com,"A fund that has backed this is treated as conflicted and is not approached."
+cmp_prescient,Prescient AI,https://www.prescientai.com,Direct,"AI-driven budget allocation and media decisioning for consumer brands.",Blocking,1,https://www.prescientai.com,"Closest overlap on the decisioning claim itself."
+cmp_haus,Haus,https://www.haus.io,Near-adjacent,"Incrementality measurement - part of the same value chain, sold to the same buyer.",Review,1,https://www.haus.io,"Overlap is measurement, not decisioning. Review case by case."
+cmp_northbeam,Northbeam,https://www.northbeam.io,Near-adjacent,"Attribution and media measurement for consumer brands.",Review,1,https://www.northbeam.io,"Review before engaging an investor on their cap table."
+cmp_measured,Measured,https://www.measured.com,Near-adjacent,"Incrementality and media mix measurement.",Review,1,https://www.measured.com,""
+cmp_thanx,Thanx,https://www.thanx.com,Near-adjacent,"Restaurant loyalty and guest marketing.",Monitor,1,https://www.thanx.com,"Different layer of the stack but the same budget owner."
+cmp_punchh,Punchh,https://punchh.com,Near-adjacent,"Restaurant loyalty and campaign execution.",Monitor,1,https://punchh.com,""
+cmp_sevenrooms,SevenRooms,https://sevenrooms.com,Platform,"Restaurant CRM inside a delivery marketplace - the platform-encroachment case.",Monitor,1,https://sevenrooms.com,"Owned by DoorDash. Relevant to the platform-risk objection more than to conflicts."
+cmp_klaviyo,Klaviyo,https://www.klaviyo.com,Near-adjacent,"Commerce marketing and CRM. Execution layer, not decisioning.",Monitor,1,https://www.klaviyo.com,""
+cmp_attentive,Attentive,https://www.attentive.com,Near-adjacent,"Lifecycle messaging for consumer brands.",Monitor,1,https://www.attentive.com,""

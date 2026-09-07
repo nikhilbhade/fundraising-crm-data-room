@@ -1,0 +1,10 @@
+task_id,opportunity_id,firm_id,title,due_date,owner,priority,status,notes
+task_round_setup,,,"Set the real round target, minimum and lead cheque on the Round page",,,High,Open,"Every allocation number in the dashboards reads from this. The seeded values are placeholders."
+task_conflict_pass,,,"Run a first conflict pass: check all 16 seeded firms against the competitor watchlist",,,High,Open,"Open Conflicts and work the unchecked matrix. Nothing should reach outreach before it is cleared."
+task_partner_owners,,,"Identify the owning partner at each priority firm and record them under Contacts",,,High,Open,"Contacts ship empty on purpose. A firm with no named partner has no process."
+task_fund_vintage,,,"Fill current fund vintage and close date for the top ten firms from EDGAR",,,Medium,Open,"Fund capacity scoring stays neutral until this is filled in."
+task_intro_paths,,,"Map at least one warm introduction path per priority firm",,,High,Open,"No paths are seeded - inventing them would be worse than leaving it blank."
+task_platform_memo,,,"Write the platform risk memo before the first partner meeting",,,High,Open,"This objection will come up in every process. Answer it in writing first."
+task_dataroom_core,,,"Fill the six restricted data room items: model, cap table, prior docs, incorporation, IP assignment, customer contracts",,,Medium,Open,"IP assignment gaps are the most common reason diligence stalls."
+task_yc_decision,,,"Decide whether to apply to YC Winter 2027 before the 2 November deadline",,,High,Open,"See Programmes. Applying costs a weekend; not applying costs a batch cycle."
+task_pearx_decision,,,"Decide on PearX W27 before the 4 October regular deadline",,,High,Open,"There is an earlier deadline ahead of the regular one - check the site."

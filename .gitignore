@@ -1,0 +1,28 @@
+# Local working database — yours, never committed
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Private fundraising data. Keep the shared seed files in seed/ and put
+# anything real in private/ so it never reaches the repo.
+private/
+exports/
+*.local.csv
+
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.Python
+build/
+dist/
+*.egg-info/
+
+.streamlit/secrets.toml
+
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

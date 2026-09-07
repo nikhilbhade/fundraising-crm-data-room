@@ -1,0 +1,13 @@
+tag_id,tag,category,default_weight,description
+t_ai_b2b_saas,AI B2B SaaS,Core,10,"Applied AI sold to businesses as software. The core of what we are."
+t_martech,Marketing software / martech,Core,9,"Software bought by marketing teams: campaigns, CRM, loyalty, lifecycle."
+t_restaurant_tech,Restaurant technology,Core,8,"POS, ordering, delivery, loyalty and operations software for restaurants."
+t_measurement,Measurement & attribution,Core,7,"Incrementality, MMM, attribution and marketing analytics."
+t_cpg_commerce,CPG / commerce / retail tech,Adjacent,7,"Consumer packaged goods, retail media, marketplaces and DTC commerce."
+t_gtm_data_infra,Data & AI infrastructure for go-to-market,Adjacent,6,"CDPs, warehouses, identity, pipelines and reverse ETL powering revenue teams."
+t_vertical_saas,Vertical SaaS,Adjacent,6,"Software purpose-built for one industry rather than one function."
+t_workflow_automation,Workflow automation & agents,Adjacent,5,"Agentic and automation software that takes actions, not just recommendations."
+t_multi_location,Multi-location & franchise operations,Vertical,4,"Software for businesses that operate many physical locations."
+t_marketplaces,Marketplaces & delivery,Vertical,3,"Demand marketplaces including food delivery platforms."
+t_india_us_corridor,India-to-US cross-border,Vertical,3,"Funds that back India-origin teams building US-incorporated companies."
+t_first_institutional,Leads the first institutional cheque,Infrastructure,4,"Willing and able to price and lead a seed round rather than follow."

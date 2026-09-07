@@ -1,0 +1,2 @@
+round_id,name,instrument,target_usd_k,min_viable_usd_k,lead_target_usd_k,open_date,target_close_date,status,is_active,notes
+round_seed,Seed,Priced equity or SAFE,3000,2000,1500,,,Planning,1,"Target, minimum and lead cheque are planning placeholders. Set these to your real numbers on the Round page before using the allocation dashboard."

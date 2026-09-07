@@ -1,0 +1,9 @@
+firm_id,company_id,relevance,note,source_url,verification_status
+f_bessemer,pc_toast,ADJACENT,"Restaurant operating-system exposure. Confirm on the firm's portfolio page before citing it in a meeting.",https://www.bvp.com/portfolio,UNVERIFIED
+f_bessemer,pc_shopify,SIGNAL,"Commerce platform exposure, relevant to the CPG expansion story.",https://www.bvp.com/portfolio,UNVERIFIED
+f_accel,pc_freshworks,SIGNAL,"Cross-border B2B SaaS reference point.",https://www.accel.com/companies,UNVERIFIED
+f_emergence,pc_veeva,ADJACENT,"Category-defining vertical software - the comparison we want them to make.",https://www.emcap.com/portfolio,UNVERIFIED
+f_forerunner,pc_faire,ADJACENT,"Consumer and commerce exposure relevant to the CPG expansion.",https://forerunnerventures.com/portfolio,UNVERIFIED
+f_nexus,pc_postman,SIGNAL,"India-origin, US-incorporated software company - the exact shape we are.",https://nexusvp.com/portfolio,UNVERIFIED
+f_peakxv,pc_freshworks,SIGNAL,"Cross-border SaaS reference point.",https://www.peakxv.com/companies,UNVERIFIED
+f_costanoa,pc_hightouch,ADJACENT,"Go-to-market data infrastructure - directly adjacent to the decision layer.",https://costanoavc.com/companies,UNVERIFIED

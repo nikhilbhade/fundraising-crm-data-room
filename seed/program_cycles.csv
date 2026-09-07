@@ -1,0 +1,12 @@
+cycle_id,program_id,cycle_name,application_opens,application_deadline,decision_expected,program_starts,program_ends,demo_day,our_status,our_owner,submitted_on,source_url,verification_status,notes
+cyc_yc_w2027,pg_yc,Winter 2027,,2026-11-02,2026-12-11,2027-01-01,2027-03-31,,Researching,,,https://www.ycombinator.com/apply,VERIFIED,"Deadline is 8pm PT on 2 November 2026; decisions by 11 December for on-time applications. Batch runs January to March in San Francisco. Programme start and end dates here are month-level placeholders - refine once YC publishes exact dates."
+cyc_pearx_w27,pg_pearx,PearX W27,,2026-10-04,,2027-01-01,2027-04-30,,Researching,,,https://pear.vc/pearx/,VERIFIED,"Regular deadline 4 October. An earlier deadline runs ahead of it - apply to that one if the materials are ready. Winter cohort runs roughly January to April."
+cyc_a16z_speedrun_next,pg_a16z_speedrun,Next cohort,,,,,,,Researching,,,https://a16z.com/speedrun/,UNVERIFIED,"Deadline not confirmed. Check the programme page and set the date before this row is useful."
+cyc_spc_next,pg_spc,Next fellowship cycle,,,,,,,Researching,,,https://www.southparkcommons.com/founder-fellowship,UNVERIFIED,"Deadline not confirmed."
+cyc_neo_next,pg_neo,Next cohort,,,,,,,Not Applying,,,https://neo.com/accelerator,UNVERIFIED,"Deadline not confirmed."
+cyc_alchemist_next,pg_alchemist,Next cohort,,,,,,,Not Applying,,,https://www.alchemistaccelerator.com/apply,UNVERIFIED,"Deadline not confirmed."
+cyc_forum_next,pg_forum,Next cohort,,,,,,,Not Applying,,,https://www.forumvc.com/accelerator,UNVERIFIED,"Deadline not confirmed."
+cyc_surge_next,pg_surge,Next cohort,,,,,,,Researching,,,https://www.peakxv.com/surge/,UNVERIFIED,"Deadline not confirmed. Confirm mandate for a US-incorporated entity first."
+cyc_nvidia_rolling,pg_nvidia_inception,Rolling,,,,,,,Researching,,,https://www.nvidia.com/en-us/startups/,UNVERIFIED,"No deadline - apply whenever."
+cyc_msft_rolling,pg_msft_founders,Rolling,,,,,,,Researching,,,https://www.microsoft.com/en-us/startups,UNVERIFIED,"No deadline - apply whenever."
+cyc_aws_rolling,pg_aws_activate,Rolling,,,,,,,Researching,,,https://aws.amazon.com/activate/,UNVERIFIED,"No deadline. Ask an investor for the referral that unlocks the larger credit tier."
