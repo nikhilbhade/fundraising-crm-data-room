@@ -16,7 +16,7 @@ class AppSmokeTests(unittest.TestCase):
             ],
             "Track": [
                 "Fundraising board", "Round status", "Follow-ups & actions", "Objections",
-                "In the news",
+                "In the news", "Changelog",
             ],
             "Settings": ["Signals & sources", "Scoring", "Data"],
         }

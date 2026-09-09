@@ -1,4 +1,4 @@
--- Fundraising CRM / Data Room — SQLite schema
+-- Fundraising CRM / Data Room — portable SQLite/PostgreSQL schema
 -- Every table is CSV-importable: column names match the seed/*.csv headers.
 
 PRAGMA foreign_keys = ON;
@@ -6,6 +6,22 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS app_metadata (
     key                 TEXT PRIMARY KEY,
     value               TEXT
+);
+
+-- Append-only record of user-visible mutations. Application writes place the
+-- business change and this audit row in the same database transaction.
+CREATE TABLE IF NOT EXISTS change_log (
+    change_id           TEXT PRIMARY KEY,
+    changed_at          TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actor               TEXT NOT NULL,
+    action              TEXT NOT NULL, -- INSERT | UPDATE | DELETE | IMPORT | RESET
+    table_name          TEXT NOT NULL,
+    record_key          TEXT,
+    changed_fields      TEXT,
+    before_json         TEXT,
+    after_json          TEXT,
+    source              TEXT,
+    batch_id            TEXT
 );
 
 -- ---------------------------------------------------------------- firms -----
@@ -40,8 +56,8 @@ CREATE TABLE IF NOT EXISTS firms (
     source_url          TEXT,
     verification_status TEXT DEFAULT 'UNVERIFIED',  -- UNVERIFIED | VERIFIED | NEEDS_REVIEW
     notes               TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    updated_at          TEXT DEFAULT (datetime('now'))
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ------------------------------------------------------- fund vehicles ------
@@ -167,8 +183,8 @@ CREATE TABLE IF NOT EXISTS opportunities (
     owner               TEXT,
     pass_reason         TEXT,
     notes               TEXT,
-    created_at          TEXT DEFAULT (datetime('now')),
-    updated_at          TEXT DEFAULT (datetime('now')),
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (round_id, firm_id)
 );
 
@@ -183,7 +199,7 @@ CREATE TABLE IF NOT EXISTS activities (
     subject             TEXT,
     summary             TEXT,
     sentiment           TEXT,     -- Positive | Neutral | Negative
-    created_at          TEXT DEFAULT (datetime('now'))
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------- objections -----
@@ -350,7 +366,7 @@ CREATE TABLE IF NOT EXISTS news_items (
     relevance           TEXT,     -- High | Medium | Low
     implication         TEXT,     -- what it changes about how we approach them
     is_conflict_signal  INTEGER DEFAULT 0,
-    added_on            TEXT DEFAULT (datetime('now'))
+    added_on            TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ------------------------------------------ accelerators & programs --------
@@ -402,3 +418,6 @@ CREATE INDEX IF NOT EXISTS idx_obj_opp     ON objections(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_dil_opp     ON diligence_requests(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_task_opp    ON tasks(opportunity_id);
 CREATE INDEX IF NOT EXISTS idx_contact_firm ON contacts(firm_id);
+CREATE INDEX IF NOT EXISTS idx_change_time ON change_log(changed_at);
+CREATE INDEX IF NOT EXISTS idx_change_table ON change_log(table_name);
+CREATE INDEX IF NOT EXISTS idx_change_batch ON change_log(batch_id);

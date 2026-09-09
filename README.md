@@ -34,6 +34,10 @@ To keep it elsewhere:
 FUNDRAISING_CRM_DB=/your/private/path/fundraising.db streamlit run app.py
 ```
 
+Local SQLite is intentionally retained for development and personal offline
+use. Production uses PostgreSQL automatically when `DB_ENGINE=postgres` or a
+PostgreSQL `DATABASE_URL` is configured.
+
 ## The workflow
 
 ### Apply
@@ -66,6 +70,118 @@ FUNDRAISING_CRM_DB=/your/private/path/fundraising.db streamlit run app.py
   allocation, and weighted pipeline.
 - **Follow-ups & actions**, **Objections**, and **In the news** catch stalled
   conversations and changing context.
+- **Changelog** shows an append-only audit history with editor, action, record,
+  changed fields, source, and full before/after snapshots. It can be filtered
+  and exported as CSV.
+
+## Cloud Run and persistent PostgreSQL
+
+The production path is:
+
+```text
+Google account → Cloud Run + IAP → Streamlit → Cloud SQL for PostgreSQL
+                                             └→ append-only change_log
+```
+
+Cloud Run's container filesystem is ephemeral, so production never stores the
+working CRM in the container. Cloud SQL is the system of record and survives
+new revisions, restarts, and scale-to-zero. The app uses pooled connections,
+pre-flight connection checks, and the Cloud SQL Unix socket.
+
+The included deployment assets are:
+
+- `Dockerfile` — non-root Streamlit image listening on port 8080
+- `.dockerignore` — excludes local databases, environments, and private files
+- `crm/migrate.py` — idempotent schema migration and public seed bootstrap
+- `scripts/deploy_cloud_run.sh` — build, migration job, and IAP-protected deploy
+- `deploy/cloudrun.env.example` — non-secret deployment variables
+
+### One-time Google Cloud setup
+
+Choose one region for Cloud Run and Cloud SQL. The example uses Mumbai:
+
+```bash
+export GCP_PROJECT="your-project-id"
+export GCP_REGION="asia-south1"
+export CLOUD_SQL_INSTANCE="fundraising-crm-db"
+export CLOUD_SQL_DATABASE="fundraising_crm"
+export CLOUD_SQL_USER="fundraising_app"
+export ARTIFACT_REPOSITORY="fundraising-crm"
+export DB_PASSWORD_SECRET="fundraising-crm-db-password"
+export CLOUD_RUN_SERVICE_ACCOUNT="fundraising-crm-runtime@${GCP_PROJECT}.iam.gserviceaccount.com"
+
+gcloud services enable \
+  run.googleapis.com sqladmin.googleapis.com secretmanager.googleapis.com \
+  artifactregistry.googleapis.com cloudbuild.googleapis.com iap.googleapis.com \
+  --project="${GCP_PROJECT}"
+
+gcloud iam service-accounts create fundraising-crm-runtime \
+  --project="${GCP_PROJECT}"
+
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${CLOUD_RUN_SERVICE_ACCOUNT}" \
+  --role="roles/cloudsql.client"
+
+gcloud artifacts repositories create "${ARTIFACT_REPOSITORY}" \
+  --project="${GCP_PROJECT}" --location="${GCP_REGION}" \
+  --repository-format=docker
+```
+
+Create a PostgreSQL Cloud SQL instance with automated backups and point-in-time
+recovery enabled. A shared-core instance is adequate for initial personal use;
+review the recurring price before creating it.
+
+```bash
+gcloud sql instances create "${CLOUD_SQL_INSTANCE}" \
+  --project="${GCP_PROJECT}" --region="${GCP_REGION}" \
+  --database-version=POSTGRES_16 --edition=enterprise --tier=db-f1-micro \
+  --availability-type=zonal --storage-type=SSD \
+  --storage-size=10 --storage-auto-increase \
+  --backup-start-time=20:00 --enable-point-in-time-recovery \
+  --deletion-protection
+
+gcloud sql databases create "${CLOUD_SQL_DATABASE}" \
+  --project="${GCP_PROJECT}" --instance="${CLOUD_SQL_INSTANCE}"
+```
+
+Create the application user and store its password without putting it in Git:
+
+```bash
+read -s -p "Database password: " DB_PASSWORD
+gcloud sql users create "${CLOUD_SQL_USER}" \
+  --project="${GCP_PROJECT}" --instance="${CLOUD_SQL_INSTANCE}" \
+  --password="${DB_PASSWORD}"
+printf '%s' "${DB_PASSWORD}" | gcloud secrets create "${DB_PASSWORD_SECRET}" \
+  --project="${GCP_PROJECT}" --replication-policy=automatic --data-file=-
+unset DB_PASSWORD
+
+gcloud secrets add-iam-policy-binding "${DB_PASSWORD_SECRET}" \
+  --project="${GCP_PROJECT}" \
+  --member="serviceAccount:${CLOUD_RUN_SERVICE_ACCOUNT}" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### Deploy
+
+```bash
+chmod +x scripts/deploy_cloud_run.sh
+scripts/deploy_cloud_run.sh
+```
+
+The script builds the image, runs the schema migration as a Cloud Run Job, and
+then deploys the Streamlit service with Cloud SQL attached. It uses IAP and
+does not permit anonymous access. Grant your Google account access after the
+first deploy:
+
+```bash
+gcloud iap web add-iam-policy-binding \
+  --project="${GCP_PROJECT}" --region="${GCP_REGION}" \
+  --resource-type=cloud-run --service=fundraising-crm \
+  --member="user:you@example.com" --role="roles/iap.httpsResourceAccessor"
+```
+
+IAP supplies the authenticated email used in every changelog entry. The local
+app instead uses the editable sidebar identity or `CRM_DEFAULT_ACTOR`.
 
 ## Investor and accelerator seed data
 
@@ -166,10 +282,10 @@ editable. The Priority view shows the full arithmetic.
 
 ## Data model and portability
 
-SQLite stores normalized firms, fund vehicles, contacts, tags, portfolio,
+SQLite or PostgreSQL stores normalized firms, fund vehicles, contacts, tags, portfolio,
 rounds, opportunities, applications, decision process, conversations,
 objections, diligence, tasks, documents, conflicts, sources, news, programmes,
-and cycles.
+cycles, and the append-only changelog.
 
 Every table is CSV importable and exportable. The Data page can download one
 table or the full database as a CSV zip. Additive migrations preserve existing
@@ -177,8 +293,9 @@ local databases when new fields are introduced.
 
 ## Privacy
 
-This is a single-user local app with no authentication. Do not expose it on a
-public server with real fundraising information.
+Local mode has no authentication. Production deployment is private by default:
+the supplied Cloud Run command enables IAP and denies unauthenticated access.
+Do not remove those controls when real fundraising information is present.
 
 The repo ignores:
 
@@ -200,18 +317,23 @@ python -m py_compile app.py crm/*.py
 
 The tests cover schema bootstrapping, the 100+ firm seed, new access and
 decision fields, board seeding, blocking competitors, conflict recomputation,
-CSV upserts, and deterministic scoring.
+CSV upserts, deterministic scoring, cross-connection persistence, append-only
+audit entries, no-op suppression, transactional rollback, and a real
+PostgreSQL integration path when `TEST_POSTGRES_URL` is supplied.
 
 ## Project layout
 
 ```text
 app.py                  Streamlit interface
-crm/schema.sql          SQLite schema
-crm/database.py         Persistence, migrations, CSV import/export, conflicts
+crm/schema.sql          Portable SQLite/PostgreSQL schema
+crm/database.py         Persistence, migrations, audit, import/export, conflicts
+crm/migrate.py          Cloud Run migration-job entry point
 crm/scoring.py          Pure explainable scoring functions
 crm/constants.py        Shared workflow vocabulary and weights
 seed/                   Public starting data; one CSV per table
 tests/                  Database and scoring tests
+deploy/                 Non-secret Cloud Run configuration example
+scripts/                Reproducible deployment command
 ```
 
 ## License

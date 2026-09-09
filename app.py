@@ -2,13 +2,14 @@
 
 Run with:  streamlit run app.py
 
-Everything is local: a SQLite file next to this script, seeded from the CSVs
-in seed/. Nothing is uploaded anywhere.
+SQLite is the local default; Cloud SQL PostgreSQL is used when configured.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
 
@@ -41,7 +42,18 @@ def refresh():
     st.cache_data.clear()
 
 
-@st.cache_data(show_spinner=False)
+def request_identity() -> tuple[str, bool]:
+    """Return the IAP identity when present, otherwise a local display name."""
+    try:
+        headers = {str(key).lower(): str(value) for key, value in st.context.headers.items()}
+    except Exception:
+        headers = {}
+    identity = headers.get("x-goog-authenticated-user-email", "")
+    if identity:
+        return identity.split(":", 1)[-1], True
+    return os.environ.get("CRM_DEFAULT_ACTOR", "Local owner"), False
+
+
 def read(sql: str, params: tuple = ()) -> pd.DataFrame:
     return db.q(conn, sql, params)
 
@@ -105,7 +117,6 @@ def linkedin_search_url(firm: Any) -> str:
 
 
 # ---------------------------------------------------------------- scoring ---
-@st.cache_data(show_spinner=False)
 def scored_firms() -> pd.DataFrame:
     firms = db.q(conn, "SELECT * FROM firms")
     if firms.empty:
@@ -318,7 +329,7 @@ def page_apply():
                 "access_mode": access, "application_url": apply_url,
                 "access_notes": access_notes, "decision_process": decision_process,
                 "decision_makers": decision_makers,
-            })
+            }, source="apply_access")
             db.update_row(conn, "opportunities", {"opportunity_id": row["opportunity_id"]}, {
                 "application_status": app_status,
                 "application_submitted_on": submitted,
@@ -326,7 +337,7 @@ def page_apply():
                 "decision_status": decision_status,
                 "decision_next_gate": decision_gate,
                 "decision_expected": decision_expected,
-            })
+            }, source="apply_decision")
             refresh(); st.success("Saved."); st.rerun()
 
     st.divider()
@@ -436,7 +447,7 @@ def page_talk():
                     "is_decision_maker": 1, "focus_areas": focus,
                     "linkedin_url": linkedin, "source_url": source,
                     "verification_status": "VERIFIED",
-                })
+                }, source="talk_contact")
                 refresh(); st.success("Verified contact saved."); st.rerun()
 
 
@@ -498,7 +509,7 @@ def page_board():
                             db.update_row(conn, "tasks", {"task_id": task["task_id"]}, {
                                 "board_status": target,
                                 "status": "Done" if target == "Done" else "Open",
-                            })
+                            }, source="board_move")
                             refresh(); st.rerun()
 
     st.divider()
@@ -523,7 +534,7 @@ def page_board():
                     "workstream": workstream, "board_status": board_status,
                     "task_type": task_type, "description": description,
                     "acceptance_criteria": acceptance, "blocked_by": blocked_by,
-                })
+                }, source="board_create")
                 refresh(); st.rerun()
 
 
@@ -629,11 +640,14 @@ def page_round():
                     status=status, notes=notes,
                 )
                 if rnd:
-                    db.update_row(conn, "rounds", {"round_id": rnd["round_id"]}, fields)
+                    db.update_row(
+                        conn, "rounds", {"round_id": rnd["round_id"]}, fields,
+                        source="round_status",
+                    )
                 else:
                     fields["round_id"] = db.new_id("round")
                     fields["is_active"] = 1
-                    db.insert_row(conn, "rounds", fields)
+                    db.insert_row(conn, "rounds", fields, source="round_status")
                 refresh()
                 st.success("Saved.")
                 st.rerun()
@@ -903,7 +917,7 @@ def page_actions():
                     db.insert_row(conn, "tasks", {
                         "task_id": db.new_id("task"), "title": t_title, "due_date": t_due,
                         "owner": t_owner, "priority": t_pri, "status": "Open",
-                    })
+                    }, source="followup_create")
                     refresh(); st.rerun()
 
 
@@ -980,7 +994,7 @@ def page_firm():
                     check_max_usd_k=cmax or None, sweet_spot_usd_k=csweet or None,
                     leads_rounds=int(leads), thesis_summary=thesis,
                     verification_status=ver, notes=notes,
-                ))
+                ), source="firm_workspace")
                 refresh(); st.success("Saved."); st.rerun()
 
         st.divider()
@@ -1020,7 +1034,7 @@ def page_firm():
                         next_action_date=next_date,
                         priority_override=float(override) if override.strip() else None,
                         pass_reason=pass_reason,
-                    ))
+                    ), source="investor_pipeline")
                     refresh(); st.success("Saved."); st.rerun()
 
     # ---- Partners ----------------------------------------------------------
@@ -1059,7 +1073,7 @@ def page_firm():
                         "title": ti, "seniority": sn, "is_decision_maker": int(dm),
                         "email": em, "linkedin_url": li, "focus_areas": fa,
                         "verification_status": "UNVERIFIED",
-                    })
+                    }, source="firm_contact")
                     refresh(); st.rerun()
 
     # ---- Thesis & portfolio -------------------------------------------------
@@ -1113,7 +1127,7 @@ def page_firm():
                     db.insert_row(conn, "firm_portfolio", {
                         "firm_id": fid, "company_id": cid, "relevance": rel,
                         "note": note, "source_url": src, "verification_status": "UNVERIFIED",
-                    })
+                    }, source="portfolio_evidence")
                     db.recompute_conflicts(conn)
                     refresh(); st.rerun()
 
@@ -1157,7 +1171,7 @@ def page_firm():
                             "firm_id": fid, "signal_id": row["signal_id"], "finding": finding,
                             "assessment": assessment, "evidence_url": ev,
                             "checked_on": db.today_iso(),
-                        }]))
+                        }]), source="firm_signal")
                         refresh(); st.rerun()
 
     # ---- Conversations -----------------------------------------------------
@@ -1188,10 +1202,12 @@ def page_firm():
                         "activity_id": db.new_id("act"), "opportunity_id": oid, "firm_id": fid,
                         "activity_date": d.isoformat(), "channel": ch, "subject": sub,
                         "summary": summ, "sentiment": sent,
-                    })
+                    }, source="conversation_log")
                     if also_touch and oid:
-                        db.update_row(conn, "opportunities", {"opportunity_id": oid},
-                                      {"last_touch_date": d.isoformat()})
+                        db.update_row(
+                            conn, "opportunities", {"opportunity_id": oid},
+                            {"last_touch_date": d.isoformat()}, source="conversation_log",
+                        )
                     refresh(); st.rerun()
 
     # ---- Objections --------------------------------------------------------
@@ -1219,7 +1235,7 @@ def page_firm():
                         "opportunity_id": opp.iloc[0]["opportunity_id"] if not opp.empty else None,
                         "firm_id": fid, "raised_on": db.today_iso(), "category": cat,
                         "objection": text, "our_response": resp, "severity": sev, "status": stt,
-                    })
+                    }, source="objection_log")
                     refresh(); st.rerun()
 
     # ---- Diligence ---------------------------------------------------------
@@ -1247,7 +1263,7 @@ def page_firm():
                         "opportunity_id": opp.iloc[0]["opportunity_id"] if not opp.empty else None,
                         "firm_id": fid, "requested_on": db.today_iso(), "category": cat,
                         "item": item, "owner": owner, "due_date": due, "status": stt,
-                    })
+                    }, source="diligence_log")
                     refresh(); st.rerun()
 
     # ---- Intro paths -------------------------------------------------------
@@ -1279,7 +1295,7 @@ def page_firm():
                     db.insert_row(conn, "intro_paths", {
                         "intro_id": db.new_id("intro"), "firm_id": fid, "connector_name": who,
                         "connector_org": org, "relationship": rel, "strength": stg, "status": stt,
-                    })
+                    }, source="intro_path")
                     refresh(); st.rerun()
 
     # ---- News --------------------------------------------------------------
@@ -1357,7 +1373,7 @@ def page_conflicts():
                     "engagement_status": new_status,
                     "engagement_reason": f"MANUAL: {reason}" if reason else "MANUAL: set by hand",
                     "conflict_flag": 0 if new_status == "Engage" else 1,
-                })
+                }, source="conflict_override")
                 refresh(); st.rerun()
 
     with tab_matrix:
@@ -1411,7 +1427,7 @@ def page_conflicts():
                     "checked_on": db.today_iso(), "finding": finding,
                     "resolution": None if resolution.startswith("(") else resolution,
                     "evidence_url": ev, "checked_by": who, "notes": note,
-                })
+                }, source="conflict_check")
                 db.recompute_conflicts(conn)
                 refresh(); st.rerun()
 
@@ -1435,7 +1451,7 @@ def page_conflicts():
                     db.insert_row(conn, "competitors", {
                         "competitor_id": db.new_id("cmp"), "name": nm, "website": web,
                         "category": cat, "overlap": ov, "severity": sev, "is_active": 1,
-                    })
+                    }, source="competitor_watchlist")
                     db.recompute_conflicts(conn)
                     refresh(); st.rerun()
 
@@ -1514,7 +1530,7 @@ def page_news():
                     "publisher": publisher, "url": url, "summary": summary,
                     "relevance": relevance, "implication": implication,
                     "is_conflict_signal": int(is_conf),
-                })
+                }, source="news_log")
                 refresh(); st.rerun()
 
 
@@ -1675,7 +1691,7 @@ def page_programs():
                 program_starts=starts, program_ends=ends, demo_day=demo,
                 submitted_on=submitted, our_status=status, our_owner=owner,
                 verification_status=ver, notes=notes,
-            ))
+            ), source="accelerator_cycle")
             refresh(); st.success("Saved."); st.rerun()
 
 
@@ -1750,8 +1766,11 @@ def page_dataroom():
                 "Ready", value=str(d["is_ready"]) == "1", key=f"doc_{d['document_id']}"
             )
             if done != (str(d["is_ready"]) == "1"):
-                db.update_row(conn, "documents", {"document_id": d["document_id"]},
-                              {"is_ready": int(done), "updated_on": db.today_iso()})
+                db.update_row(
+                    conn, "documents", {"document_id": d["document_id"]},
+                    {"is_ready": int(done), "updated_on": db.today_iso()},
+                    source="deal_room_readiness",
+                )
                 refresh(); st.rerun()
 
     st.divider()
@@ -1771,7 +1790,7 @@ def page_dataroom():
                 db.update_row(conn, "documents", {"document_id": row["document_id"]}, dict(
                     location=loc, confidentiality=conf, version=ver, owner=owner,
                     notes=notes, updated_on=db.today_iso(),
-                ))
+                ), source="deal_room_document")
                 refresh(); st.rerun()
 
     st.subheader("Sharing log")
@@ -1803,7 +1822,7 @@ def page_dataroom():
                     "document_id": docs[docs.name == d].iloc[0]["document_id"],
                     "firm_id": firms[firms.name == f_].iloc[0]["firm_id"],
                     "shared_on": db.today_iso(), "access_level": lvl, "expires_on": exp,
-                })
+                }, source="deal_room_share")
                 refresh(); st.rerun()
 
 
@@ -1866,7 +1885,7 @@ def page_scoring():
         c1, c2 = st.columns(2)
         if c1.form_submit_button("Save weights", type="primary"):
             for k, v in new.items():
-                db.set_weight(conn, k, v)
+                db.set_weight(conn, k, v, source="scoring_weights")
             refresh(); st.success("Saved."); st.rerun()
         if c2.form_submit_button("Reset to defaults"):
             db.reset_weights(conn)
@@ -1883,9 +1902,120 @@ def page_scoring():
     )
     if st.button("Save tag weights"):
         for row in edited.to_dict("records"):
-            db.update_row(conn, "thesis_tags", {"tag_id": row["tag_id"]},
-                          {"default_weight": float(row["default_weight"] or 0)})
+            db.update_row(
+                conn, "thesis_tags", {"tag_id": row["tag_id"]},
+                {"default_weight": float(row["default_weight"] or 0)},
+                source="thesis_weights",
+            )
         refresh(); st.success("Saved."); st.rerun()
+
+
+def page_changelog():
+    st.title("Changelog")
+    st.caption(
+        "An append-only history of edits. Each entry is committed in the same transaction "
+        "as the record it describes."
+    )
+    changes = read("SELECT * FROM change_log ORDER BY changed_at DESC, change_id DESC")
+    if changes.empty:
+        st.info("No user edits have been recorded yet. Seed loading is intentionally excluded.")
+        return
+
+    changes["changed_at"] = pd.to_datetime(changes["changed_at"], errors="coerce", utc=True)
+    today_count = int(
+        (changes["changed_at"].dt.date == today()).sum()
+    )
+    a, b, c, d = st.columns(4)
+    a.metric("Recorded changes", len(changes))
+    b.metric("Today", today_count)
+    c.metric("Editors", changes["actor"].nunique())
+    d.metric("Affected tables", changes["table_name"].nunique())
+
+    f1, f2, f3, f4 = st.columns(4)
+    actors = f1.multiselect("Editor", sorted(changes["actor"].dropna().unique()))
+    actions = f2.multiselect("Action", sorted(changes["action"].dropna().unique()))
+    entities = f3.multiselect("Record type", sorted(changes["table_name"].dropna().unique()))
+    window = f4.selectbox("Time window", ["All time", "24 hours", "7 days", "30 days"])
+    search = st.text_input("Search changes", placeholder="Fund, task, field, record ID…")
+
+    view = changes.copy()
+    if actors:
+        view = view[view["actor"].isin(actors)]
+    if actions:
+        view = view[view["action"].isin(actions)]
+    if entities:
+        view = view[view["table_name"].isin(entities)]
+    if window != "All time":
+        hours = {"24 hours": 24, "7 days": 24 * 7, "30 days": 24 * 30}[window]
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+        view = view[view["changed_at"] >= cutoff]
+    if search:
+        needle = search.lower()
+        search_cols = [
+            "actor", "action", "table_name", "record_key", "changed_fields",
+            "before_json", "after_json", "source",
+        ]
+        view = view[
+            view[search_cols].fillna("").astype(str).agg(" ".join, axis=1).str.lower().str.contains(
+                needle, regex=False
+            )
+        ]
+
+    def changed_label(raw: Any) -> str:
+        try:
+            fields = json.loads(raw or "[]")
+            return ", ".join(fields) if isinstance(fields, list) else str(fields)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return str(raw or "")
+
+    display = view.copy()
+    display["Fields"] = display["changed_fields"].map(changed_label)
+    display["When"] = display["changed_at"].dt.strftime("%Y-%m-%d %H:%M UTC")
+    display["Record"] = display["record_key"].fillna("")
+    st.dataframe(
+        display[["When", "actor", "action", "table_name", "Record", "Fields", "source"]]
+        .rename(columns={
+            "actor": "Editor", "action": "Action", "table_name": "Record type",
+            "source": "Source",
+        }),
+        width="stretch", hide_index=True,
+    )
+    st.download_button(
+        "Download filtered changelog",
+        data=view.to_csv(index=False).encode("utf-8"),
+        file_name=f"fundraising-changelog-{today().isoformat()}.csv",
+        mime="text/csv",
+    )
+
+    if view.empty:
+        return
+    st.subheader("Inspect a change")
+    labels = {
+        row["change_id"]: (
+            f"{row['changed_at']:%Y-%m-%d %H:%M} · {row['actor']} · "
+            f"{row['action']} {row['table_name']}"
+        )
+        for _, row in view.iterrows()
+    }
+    selected = st.selectbox(
+        "Change", list(labels), format_func=lambda change_id: labels[change_id],
+        label_visibility="collapsed",
+    )
+    row = view[view["change_id"] == selected].iloc[0]
+
+    def decoded(raw: Any):
+        try:
+            return json.loads(raw) if raw else None
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return raw
+
+    left, right = st.columns(2)
+    with left:
+        st.caption("Before")
+        st.json(decoded(row["before_json"]) or {})
+    with right:
+        st.caption("After")
+        st.json(decoded(row["after_json"]) or {})
 
 
 def page_data():
@@ -1928,7 +2058,9 @@ def page_data():
             mime="application/zip",
             type="primary",
         )
-        one = st.selectbox("Single table", db.SEED_ORDER, key="exp_one")
+        one = st.selectbox(
+            "Single table", db.SEED_ORDER + ["scoring_weights", "change_log"], key="exp_one"
+        )
         st.download_button(
             f"Download {one}.csv",
             data=db.export_table_csv(conn, one),
@@ -1937,7 +2069,7 @@ def page_data():
         )
 
     with tab_admin:
-        st.write(f"Database file: `{db.db_path()}`")
+        st.write(f"Database: `{db.backend_label(conn)}`")
         counts = []
         for t in db.SEED_ORDER:
             if db.table_exists(conn, t):
@@ -1945,16 +2077,19 @@ def page_data():
         st.dataframe(pd.DataFrame(counts), width="stretch", hide_index=True)
 
         st.divider()
-        if st.button("Re-load seed CSVs (upserts, keeps your edits to other rows)"):
-            result = db.load_seed(conn)
+        if st.button("Merge public seed defaults (keeps existing edits)"):
+            result = db.merge_seed_defaults(conn, audit=True, source="seed_merge")
             refresh()
-            st.success(f"Loaded: {sum(result.values())} rows across {len(result)} tables.")
-        st.warning("Deleting the database discards everything you have entered.")
-        if st.checkbox("I understand") and st.button("Delete and rebuild from seed"):
-            db.reset_database()
-            st.cache_resource.clear()
-            refresh()
-            st.rerun()
+            st.success(f"Checked {sum(result.values())} seed rows across {len(result)} tables.")
+        if db.is_cloud_database(conn):
+            st.info("Cloud SQL reset is disabled in the app. Use a managed backup or migration instead.")
+        else:
+            st.warning("Deleting the database discards everything you have entered.")
+            if st.checkbox("I understand") and st.button("Delete and rebuild from seed"):
+                db.reset_database()
+                st.cache_resource.clear()
+                refresh()
+                st.rerun()
 
 
 # ============================================================================
@@ -1977,6 +2112,7 @@ NAV_SECTIONS = {
         "Follow-ups & actions": page_actions,
         "Objections": page_objections,
         "In the news": page_news,
+        "Changelog": page_changelog,
     },
     "Settings": {
         "Signals & sources": page_signals,
@@ -1991,12 +2127,19 @@ with st.sidebar:
     section = st.radio("Mode", list(NAV_SECTIONS), horizontal=True)
     choice = st.radio("Page", list(NAV_SECTIONS[section]), label_visibility="collapsed")
     st.divider()
+    detected_actor, identity_locked = request_identity()
+    if identity_locked:
+        actor = detected_actor
+        st.caption(f"Editing as {actor}")
+    else:
+        actor = st.text_input("Editing as", value=detected_actor)
+    db.set_actor(actor)
     pipe = pipeline_view()
     if not pipe.empty:
         s = settings()
         blocked = int((pipe["engagement_status"] != "Engage").sum())
         stale = int((pipe["days_since_touch"].fillna(-1) >= s.get("stale_days", 14)).sum())
         st.caption(f"{len(pipe)} firms · {stale} stale · {blocked} not cleared to engage")
-    st.caption(f"Database: `{db.db_path().name}`")
+    st.caption(f"Database: `{db.backend_label(conn)}`")
 
 NAV_SECTIONS[section][choice]()
