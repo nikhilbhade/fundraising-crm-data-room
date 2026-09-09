@@ -8,6 +8,7 @@ SQLite is the local default; Cloud SQL PostgreSQL is used when configured.
 from __future__ import annotations
 
 import datetime as dt
+import hmac
 import json
 import os
 from typing import Any, Dict, List, Optional
@@ -28,6 +29,42 @@ st.set_page_config(
 )
 
 
+def require_access() -> None:
+    """Fail closed when the deployment uses the shared-password auth mode."""
+    if os.environ.get("CRM_AUTH_MODE", "").strip().lower() != "shared_password":
+        return
+    expected = os.environ.get("CRM_ACCESS_PASSWORD", "")
+    if not expected:
+        st.error("Access protection is not configured. Contact the workspace owner.")
+        st.stop()
+    if st.session_state.get("_crm_authenticated"):
+        return
+
+    def unlock() -> None:
+        supplied = st.session_state.get("_crm_access_password", "")
+        accepted = hmac.compare_digest(str(supplied), expected)
+        st.session_state["_crm_authenticated"] = accepted
+        st.session_state["_crm_auth_error"] = not accepted
+        st.session_state["_crm_access_password"] = ""
+
+    st.title("Fundraising CRM")
+    st.caption("Private fundraising workspace")
+    with st.form("crm_access_form"):
+        st.text_input(
+            "Access password",
+            type="password",
+            key="_crm_access_password",
+            autocomplete="current-password",
+        )
+        st.form_submit_button("Unlock workspace", type="primary", on_click=unlock)
+    if st.session_state.get("_crm_auth_error"):
+        st.error("That password did not match.")
+    st.stop()
+
+
+require_access()
+
+
 # --------------------------------------------------------------- plumbing ---
 @st.cache_resource
 def get_conn():
@@ -44,6 +81,8 @@ def refresh():
 
 def request_identity() -> tuple[str, bool]:
     """Return the IAP identity when present, otherwise a local display name."""
+    if os.environ.get("CRM_AUTH_MODE", "").strip().lower() == "shared_password":
+        return os.environ.get("CRM_DEFAULT_ACTOR", "Local owner"), False
     try:
         headers = {str(key).lower(): str(value) for key, value in st.context.headers.items()}
     except Exception:
@@ -2134,6 +2173,10 @@ with st.sidebar:
     else:
         actor = st.text_input("Editing as", value=detected_actor)
     db.set_actor(actor)
+    if os.environ.get("CRM_AUTH_MODE", "").strip().lower() == "shared_password":
+        if st.button("Lock workspace", width="stretch"):
+            st.session_state["_crm_authenticated"] = False
+            st.rerun()
     pipe = pipeline_view()
     if not pipe.empty:
         s = settings()

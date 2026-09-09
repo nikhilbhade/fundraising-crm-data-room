@@ -183,6 +183,44 @@ gcloud iap web add-iam-policy-binding \
 IAP supplies the authenticated email used in every changelog entry. The local
 app instead uses the editable sidebar identity or `CRM_DEFAULT_ACTOR`.
 
+### Personal projects without a Google Workspace organization
+
+Google requires a one-time custom OAuth consent/client setup before IAP browser
+login works in a project that has no organization. You can complete that setup
+in **Cloud Run → fundraising-crm → Security → IAP**. If you want an immediately
+usable personal deployment without creating an OAuth client, use the included
+shared-password mode instead. The endpoint is reachable, but all CRM pages and
+database connections remain behind the application login screen.
+
+Create a separate access password and grant the runtime access to that secret:
+
+```bash
+openssl rand -base64 36 | tr -d '\n' | \
+  gcloud secrets create fundraising-crm-access-password \
+    --project="${GCP_PROJECT}" --replication-policy=user-managed \
+    --locations="${GCP_REGION}" --data-file=-
+
+gcloud secrets add-iam-policy-binding fundraising-crm-access-password \
+  --project="${GCP_PROJECT}" \
+  --member="serviceAccount:${CLOUD_RUN_SERVICE_ACCOUNT}" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+Then deploy with:
+
+```bash
+CLOUD_RUN_AUTH_MODE=shared_password \
+CRM_DEFAULT_ACTOR="you@example.com" \
+scripts/deploy_cloud_run.sh
+```
+
+Retrieve the password without placing it in source control:
+
+```bash
+gcloud secrets versions access latest \
+  --project="${GCP_PROJECT}" --secret=fundraising-crm-access-password
+```
+
 ## Investor and accelerator seed data
 
 The repo ships with:
@@ -293,9 +331,11 @@ local databases when new fields are introduced.
 
 ## Privacy
 
-Local mode has no authentication. Production deployment is private by default:
-the supplied Cloud Run command enables IAP and denies unauthenticated access.
-Do not remove those controls when real fundraising information is present.
+Local mode has no authentication. Production uses IAP by default. The documented
+no-organization fallback allows the Cloud Run endpoint through IAM but stops
+every visitor at the shared-password gate before opening a database connection.
+Do not deploy without one of those controls when real fundraising information
+is present.
 
 The repo ignores:
 
